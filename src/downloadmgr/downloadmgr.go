@@ -6,15 +6,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/nedvisol/go-connectdots/cacheditem"
+	"github.com/nedvisol/go-connectdots/config"
 )
 
 const LIMIT_PER_HOST = 2
+
+var logger = log.New(os.Stdout, "downloadmgr", log.Ldate|log.Ltime)
 
 type DownloadManager struct {
 	options       *DownloadManagerOptions
@@ -23,8 +27,9 @@ type DownloadManager struct {
 }
 
 type DownloadManagerOptions struct {
-	cacheDir       *string
-	cachedItemRepo cacheditem.CachedItemRepository
+	CacheDir       string
+	CachedItemRepo cacheditem.CachedItemRepository
+	Config         *config.Config
 }
 
 type downloadQueue struct {
@@ -49,30 +54,35 @@ func (dm *DownloadManager) getHashKey(request *http.Request) string {
 }
 
 func (dm *DownloadManager) processDownload(ctx context.Context, request *http.Request, callback DownloadCallback) {
+	logger.Printf("processing %s\n", request.URL.String())
+
 	//check for cache
 	requestHashKey := dm.getHashKey(request)
-	cachedItem, err := dm.options.cachedItemRepo.FindByKey(ctx, requestHashKey)
+	cacheFilePath := fmt.Sprintf("%s/%s", dm.options.CacheDir, requestHashKey)
+	cachedItem, err := dm.options.CachedItemRepo.FindByKey(ctx, requestHashKey)
 	if err != nil {
-		panic("unable to get cached item from cachedItemRepo")
+		logger.Fatal("unable to get cached item from cachedItemRepo")
 	}
 
 	if cachedItem != nil {
 		cacheExpiredAt := time.Unix(cachedItem.ExpiresAtSec, 0)
-		filePath := fmt.Sprintf("%s/%s", *dm.options.cacheDir, requestHashKey)
 		if time.Now().Before(cacheExpiredAt) {
 			//return cached item in a different thread
-			data, err := os.ReadFile(filePath)
+			data, err := os.ReadFile(cacheFilePath)
 			if err != nil {
-				panic(err)
+				logger.Printf("cannot open file for %s - %s", request.URL.String(), cacheFilePath)
+			} else {
+				go func() {
+					logger.Printf("returned from cache %s", request.URL.String())
+					callback(data)
+				}()
+				return
 			}
-			go func() {
-				callback(data)
-			}()
-			return
 		} else {
 			//cache expired, delete from repo and delete file
-			dm.options.cachedItemRepo.DeleteByKey(ctx, requestHashKey)
-			err := os.Remove(filePath)
+			logger.Printf("cache exists but expired %s", request.URL.String())
+			dm.options.CachedItemRepo.DeleteByKey(ctx, requestHashKey)
+			err := os.Remove(cacheFilePath)
 			if err != nil {
 				panic(err)
 			}
@@ -89,6 +99,16 @@ func (dm *DownloadManager) processDownload(ctx context.Context, request *http.Re
 	if err != nil {
 		panic("http read from body error")
 
+	}
+
+	os.WriteFile(cacheFilePath, body, 0600)
+	err = dm.options.CachedItemRepo.Create(ctx, &cacheditem.CachedItem{
+		Key:          requestHashKey,
+		ExpiresAtSec: time.Now().Add(dm.options.Config.CacheTtl).Unix(),
+	})
+	logger.Printf("downloaded %s - cache updated %s", request.URL.String(), cacheFilePath)
+	if err != nil {
+		logger.Fatal(err)
 	}
 	go func() {
 		callback(body)
@@ -109,6 +129,7 @@ func (dm *DownloadManager) Download(ctx context.Context, request *http.Request, 
 	dq.mutex.Unlock()
 
 	dq.wg.Add(1)
+	logger.Printf("queue up %s\n", request.URL.String())
 	go dm.processRequest(ctx, request, callback, sem)
 
 }
@@ -133,6 +154,7 @@ func (dm *DownloadManager) Wait() {
 }
 
 func NewDownloadManager(opts *DownloadManagerOptions) *DownloadManager {
+
 	downloadQueue := &downloadQueue{
 		limitPerHost: LIMIT_PER_HOST,
 		queues:       make(map[string]chan struct{}),
@@ -143,4 +165,9 @@ func NewDownloadManager(opts *DownloadManagerOptions) *DownloadManager {
 		client:        &http.Client{},
 		downloadQueue: downloadQueue,
 	}
+}
+
+func NewHttpGetRequest(url string) *http.Request {
+	req, _ := http.NewRequest("GET", url, nil)
+	return req
 }
