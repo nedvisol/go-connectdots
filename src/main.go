@@ -7,6 +7,7 @@ import (
 	"github.com/nedvisol/go-connectdots/cacheditem"
 	"github.com/nedvisol/go-connectdots/config"
 	"github.com/nedvisol/go-connectdots/downloadmgr"
+	"github.com/nedvisol/go-connectdots/graphdb"
 	"github.com/nedvisol/go-connectdots/processor"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -43,22 +44,22 @@ func NewDownloadManagerOptions(db *mongo.Database, config *config.Config) *downl
 	}
 }
 
-func AppStart(ctx context.Context, congressGov *processor.CongressGovProcessor) {
-	// req, _ := http.NewRequest("GET", "http://ned1:3000/hello.json", nil)
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
-	// dmgr.Download(ctx, req, func(data []byte) { fmt.Printf("downloaded %s\n", string(data)) })
+func AppStart(lifecycle fx.Lifecycle, ctx context.Context, congressGov *processor.CongressGovProcessor) {
 
-	//dmgr.Wait()
+	lifecycle.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			fmt.Println("Application is stopping. Cleaning up resources...")
+			// Perform cleanup actions here (close connections, release resources, etc.)
+			return nil
+		},
+	})
 
 	congressGov.Start()
 }
 
 func main() {
+
+	//ctx, _ := context.WithCancel(context.Background())
 
 	app := fx.New(
 		fx.Provide(
@@ -68,6 +69,7 @@ func main() {
 			NewMongoDatabase,
 			NewDownloadManagerOptions,
 			downloadmgr.NewDownloadManager,
+			graphdb.NewNeo4jGraphService,
 			processor.NewCongressGovProcessor,
 		),
 		fx.Invoke(AppStart),

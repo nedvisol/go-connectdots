@@ -8,13 +8,15 @@ import (
 
 	"github.com/nedvisol/go-connectdots/config"
 	"github.com/nedvisol/go-connectdots/downloadmgr"
+	"github.com/nedvisol/go-connectdots/graphdb"
 	"github.com/nedvisol/go-connectdots/model"
 )
 
 type CongressGovProcessor struct {
-	ctx      context.Context
-	dmgr     *downloadmgr.DownloadManager
-	apiToken string
+	ctx        context.Context
+	dmgr       *downloadmgr.DownloadManager
+	apiToken   string
+	graphdbsvc graphdb.GraphDbService
 }
 
 const MEMBERS_URL = "https://api.congress.gov/v3/member?format=json&currentMember=true&limit=250"
@@ -53,10 +55,16 @@ func (c *CongressGovProcessor) Start() {
 	)
 }
 
-func NewCongressGovProcessor(ctx context.Context, dmgr *downloadmgr.DownloadManager, config *config.Config) *CongressGovProcessor {
+func NewCongressGovProcessor(
+	ctx context.Context,
+	dmgr *downloadmgr.DownloadManager,
+	config *config.Config,
+	graphdbsvc graphdb.GraphDbService,
+) *CongressGovProcessor {
 	return &CongressGovProcessor{
-		ctx:      ctx,
-		dmgr:     dmgr,
-		apiToken: config.CongressGovToken,
+		ctx:        ctx,
+		dmgr:       dmgr,
+		apiToken:   config.CongressGovToken,
+		graphdbsvc: graphdbsvc,
 	}
 }

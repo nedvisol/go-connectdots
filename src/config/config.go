@@ -5,12 +5,19 @@ import (
 	"time"
 )
 
+type GraphDbConfig struct {
+	Uri      string
+	Username string
+	Password string
+}
+
 type Config struct {
 	CacheDir         string
 	CacheTtl         time.Duration
 	MongoUrl         string
 	MongoDb          string
 	CongressGovToken string
+	GraphDb          *GraphDbConfig
 }
 
 func NewConfig() *Config {
@@ -24,5 +31,10 @@ func NewConfig() *Config {
 		MongoUrl:         "mongodb://nedlinux:27017",
 		MongoDb:          "go_connectdots",
 		CongressGovToken: string(congressApiToken),
+		GraphDb: &GraphDbConfig{
+			Uri:      "neo4j://nedlinux:7687",
+			Username: "neo4j",
+			Password: "neo4jpassword",
+		},
 	}
 }
