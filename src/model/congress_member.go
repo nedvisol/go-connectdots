@@ -6,30 +6,30 @@ import (
 
 // Structs to represent the JSON data
 
-type Depiction struct {
+type CongressApiMemberDepiction struct {
 	Attribution string `json:"attribution"`
 	ImageUrl    string `json:"imageUrl"`
 }
 
-type TermItem struct {
+type CongressApiMemberTermItem struct {
 	Chamber   string `json:"chamber"`
 	StartYear int    `json:"startYear"`
 }
 
-type Terms struct {
-	Item []TermItem `json:"item"`
+type CongressApiMemberTerms struct {
+	Item []CongressApiMemberTermItem `json:"item"`
 }
 
-type Member struct {
-	BioguideID string    `json:"bioguideId"`
-	Depiction  Depiction `json:"depiction"`
-	District   int       `json:"district,omitempty"` // omitempty since some members don't have a district (e.g., Senators)
-	Name       string    `json:"name"`
-	PartyName  string    `json:"partyName"`
-	State      string    `json:"state"`
-	Terms      Terms     `json:"terms"`
-	UpdateDate time.Time `json:"updateDate"`
-	URL        string    `json:"url"`
+type CongressApiMember struct {
+	BioguideID string                     `json:"bioguideId"`
+	Depiction  CongressApiMemberDepiction `json:"depiction"`
+	District   int                        `json:"district,omitempty"` // omitempty since some members don't have a district (e.g., Senators)
+	Name       string                     `json:"name"`
+	PartyName  string                     `json:"partyName"`
+	State      string                     `json:"state"`
+	Terms      CongressApiMemberTerms     `json:"terms"`
+	UpdateDate time.Time                  `json:"updateDate"`
+	URL        string                     `json:"url"`
 }
 
 type Pagination struct {
@@ -37,13 +37,13 @@ type Pagination struct {
 	Next  *string `json:"next"`
 }
 
-type Request struct {
+type CongressApiMemberRequest struct {
 	ContentType string `json:"contentType"`
 	Format      string `json:"format"`
 }
 
-type CongressMemberResponse struct {
-	Members    []Member    `json:"members"`
-	Pagination *Pagination `json:"pagination"`
-	Request    Request     `json:"request"`
+type CongressApiMemberResponse struct {
+	Members    []*CongressApiMember     `json:"members"`
+	Pagination *Pagination              `json:"pagination"`
+	Request    CongressApiMemberRequest `json:"request"`
 }
