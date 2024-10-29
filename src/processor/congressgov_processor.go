@@ -51,6 +51,12 @@ func (c *CongressGovProcessor) createMember(member *model.CongressApiMember) {
 	if err := c.graphdbsvc.CreateNode(personNode); err != nil {
 		panic(err)
 	}
+
+	err := c.graphdbsvc.CreateNode(personNode)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("member created %s\n", member.Name)
 }
 
 func (c *CongressGovProcessor) processCurrentMembers(data []byte) {

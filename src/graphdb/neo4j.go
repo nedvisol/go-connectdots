@@ -51,27 +51,28 @@ func (n *Neo4jGraphService) CreateNode(node *NodeInfo) error {
 
 	query := fmt.Sprintf(`
 	CREATE (node: %s {%s} )
-	RETURN node.Id
+	RETURN node._id
 	`, node.Label, strings.Join(queryAttrs, ","))
 	(*node.Attrs)["_id"] = node.Id
 
 	fmt.Printf("executing query %s\n", query)
 
 	// Execute the query inside a transaction
-	records, err := n.session.Run(ctx, query, *node.Attrs)
+	records, err := n.session.Run(n.ctx, query, *node.Attrs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if records.Next() {
-		id := records.Record().GetByIndex(0).(string)
+	if records.Next(n.ctx) {
+		id, found := records.Record().Get("node._id")
+		if !found {
+			panic("unable to create node")
+		}
 		fmt.Printf("Created node %s", id)
-		return nil, nil
+		return nil
 	}
 
-	return nil, records.Err()
-
-	return err
+	return nil
 }
 
 // DeleteNode implements GraphDbService.
@@ -93,13 +94,13 @@ func NewNeo4jGraphService(lifecycle fx.Lifecycle, ctx context.Context, cfg *conf
 	//defer driver.Close()
 
 	// Start a new session
-	session := driver.NewSession(neo4j.SessionConfig{DatabaseName: "neo4j"})
+	session := driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: "neo4j"})
 	//defer session.Close()
 
 	lifecycle.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
-			driver.Close()
-			session.Close()
+			driver.Close(ctx)
+			session.Close(ctx)
 			fmt.Println("Application is stopping. closed neo4j driver and session")
 			return nil
 		},
