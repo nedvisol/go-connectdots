@@ -15,3 +15,11 @@ func GetSHA512(val string) string {
 
 	return base64.StdEncoding.EncodeToString(hashBytes)
 }
+
+func Ternary(cond bool, trueval any, falseval any) any {
+	if cond {
+		return trueval
+	} else {
+		return falseval
+	}
+}

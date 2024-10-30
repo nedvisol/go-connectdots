@@ -15,7 +15,7 @@ type EdgeInfo struct {
 
 type GraphDbService interface {
 	CreateNode(node *NodeInfo) error
-	UpdateNode(node *NodeInfo) error
+	UpdateNode(node *NodeInfo, allowUpsert bool) error
 	DeleteNode(node *NodeInfo) error
 	CreateEdge(edge *EdgeInfo) error
 }

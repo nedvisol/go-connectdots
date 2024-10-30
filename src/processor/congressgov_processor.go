@@ -47,20 +47,19 @@ func (c *CongressGovProcessor) createNodeInfo(member *model.CongressApiMember) *
 }
 
 func (c *CongressGovProcessor) createMember(member *model.CongressApiMember) {
+	var err error
 	personNode := c.createNodeInfo(member)
-	if err := c.graphdbsvc.CreateNode(personNode); err != nil {
-		panic(err)
-	}
 
-	err := c.graphdbsvc.CreateNode(personNode)
+	err = c.graphdbsvc.UpdateNode(personNode, true)
+
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("member created %s\n", member.Name)
+	fmt.Printf("member added/updated %s\n", member.Name)
 }
 
 func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
-	fmt.Printf("processing current memebers %d bytes", len(data))
+	fmt.Printf("processing current memebers %d bytes\n", len(data))
 
 	var result model.CongressApiMemberResponse
 
@@ -71,7 +70,7 @@ func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
 	}
 
 	if result.Pagination != nil && result.Pagination.Next != nil {
-		fmt.Printf("found more things to download! %s", *result.Pagination.Next)
+		fmt.Printf("found more things to download! %s\n", *result.Pagination.Next)
 		c.dmgr.Download(
 			c.ctx,
 			downloadmgr.NewHttpGetRequest(c.applyApiToken(*result.Pagination.Next)),
@@ -79,9 +78,12 @@ func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
 		)
 	}
 
+	var cnt = 0
 	for _, member := range result.Members {
 		c.createMember(member)
+		cnt++
 	}
+	fmt.Printf("updated %d members\n", cnt)
 }
 
 // Start implements Processor.
