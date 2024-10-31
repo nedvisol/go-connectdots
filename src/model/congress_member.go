@@ -32,18 +32,64 @@ type CongressApiMember struct {
 	URL        string                     `json:"url"`
 }
 
-type Pagination struct {
+type CongressApiPagination struct {
 	Count int     `json:"count"`
 	Next  *string `json:"next"`
 }
 
-type CongressApiMemberRequest struct {
+type CongressApiRequest struct {
 	ContentType string `json:"contentType"`
 	Format      string `json:"format"`
 }
 
 type CongressApiMemberResponse struct {
-	Members    []*CongressApiMember     `json:"members"`
-	Pagination *Pagination              `json:"pagination"`
-	Request    CongressApiMemberRequest `json:"request"`
+	Members    []*CongressApiMember   `json:"members"`
+	Pagination *CongressApiPagination `json:"pagination"`
+	Request    CongressApiRequest     `json:"request"`
+}
+
+type CongressApiCongress struct {
+	Congresses []*CongressApiCongressItem `json:"congresses"`
+	Pagination *CongressApiPagination     `json:"pagination"`
+	Request    *CongressApiRequest        `json:"request"`
+}
+
+type CongressApiCongressItem struct {
+	EndYear   *string               `json:"endYear"`
+	Name      *string               `json:"name"`
+	Sessions  []*CongressApiSession `json:"sessions"`
+	StartYear *string               `json:"startYear"`
+	URL       *string               `json:"url"`
+}
+
+type CongressApiSession struct {
+	Chamber   *string `json:"chamber"`
+	EndDate   *string `json:"endDate,omitempty"`
+	Number    int     `json:"number"`
+	StartDate *string `json:"startDate"`
+	Type      *string `json:"type"`
+}
+
+type CongressApiBillsData struct {
+	Bills      []*CongressApiBill     `json:"bills"`
+	Pagination *CongressApiPagination `json:"pagination"`
+	Request    *CongressApiRequest    `json:"request"`
+}
+
+type CongressApiBill struct {
+	Congress                int                `json:"congress"`
+	LatestAction            *CongressApiAction `json:"latestAction"`
+	Number                  *string            `json:"number"`
+	OriginChamber           *string            `json:"originChamber"`
+	OriginChamberCode       *string            `json:"originChamberCode"`
+	Title                   *string            `json:"title"`
+	Type                    *string            `json:"type"`
+	UpdateDate              *string            `json:"updateDate"`
+	UpdateDateIncludingText *string            `json:"updateDateIncludingText"`
+	URL                     *string            `json:"url"`
+}
+
+type CongressApiAction struct {
+	ActionDate *string `json:"actionDate"`
+	Text       *string `json:"text"`
 }

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,11 +36,22 @@ type DownloadManagerOptions struct {
 type downloadQueue struct {
 	limitPerHost int
 	queues       map[string]chan struct{} // Semaphore per host
+	queuesCount  map[string]int
 	mutex        sync.Mutex
 	wg           sync.WaitGroup
 }
 
 type DownloadCallback func(data []byte)
+
+type DownloadCacheOption struct {
+	Ttl time.Duration
+}
+
+func NewDownloadCacheOption(ttl time.Duration) *DownloadCacheOption {
+	return &DownloadCacheOption{
+		Ttl: ttl,
+	}
+}
 
 func (dm *DownloadManager) getHashKey(request *http.Request) string {
 	val := fmt.Sprintf("%s %s", request.Method, request.URL)
@@ -50,11 +62,27 @@ func (dm *DownloadManager) getHashKey(request *http.Request) string {
 	// Get the final hashed output
 	hashBytes := hash.Sum(nil)
 
-	return base64.StdEncoding.EncodeToString(hashBytes)
+	return strings.ReplaceAll(base64.StdEncoding.EncodeToString(hashBytes), "/", "_")
 }
 
-func (dm *DownloadManager) processDownload(ctx context.Context, request *http.Request, callback DownloadCallback) {
-	logger.Printf("processing %s\n", request.URL.String())
+func (dm *DownloadManager) processDownload(
+	ctx context.Context,
+	request *http.Request,
+	callback DownloadCallback,
+	opts ...interface{},
+) {
+	host := request.Host
+	logger.Printf("Q=%d for %s, processing %s\n", dm.downloadQueue.queuesCount[host], host, request.URL.String())
+
+	//extract options
+	ttl := dm.options.Config.CacheTtl
+
+	for _, opt := range opts {
+		switch optVal := opt.(type) {
+		case *DownloadCacheOption:
+			ttl = optVal.Ttl
+		}
+	}
 
 	//check for cache
 	requestHashKey := dm.getHashKey(request)
@@ -104,7 +132,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, request *http.Re
 	os.WriteFile(cacheFilePath, body, 0600)
 	err = dm.options.CachedItemRepo.Create(ctx, &cacheditem.CachedItem{
 		Key:          requestHashKey,
-		ExpiresAtSec: time.Now().Add(dm.options.Config.CacheTtl).Unix(),
+		ExpiresAtSec: time.Now().Add(ttl).Unix(),
 	})
 	logger.Printf("downloaded %s - cache updated %s", request.URL.String(), cacheFilePath)
 	if err != nil {
@@ -115,7 +143,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, request *http.Re
 	}()
 }
 
-func (dm *DownloadManager) Download(ctx context.Context, request *http.Request, callback DownloadCallback) {
+func (dm *DownloadManager) Download(ctx context.Context, request *http.Request, callback DownloadCallback, opts ...interface{}) {
 	host := request.URL.Host
 	dq := dm.downloadQueue
 
@@ -124,28 +152,39 @@ func (dm *DownloadManager) Download(ctx context.Context, request *http.Request, 
 	dq.mutex.Lock()
 	if _, exists := dq.queues[host]; !exists {
 		dq.queues[host] = make(chan struct{}, dq.limitPerHost) // Limit to 2 concurrent connections per host
+		dq.queuesCount[host] = 1
+	} else {
+		dq.queuesCount[host]++
 	}
 	sem := dq.queues[host]
 	dq.mutex.Unlock()
 
 	dq.wg.Add(1)
-	logger.Printf("queue up %s\n", request.URL.String())
-	go dm.processRequest(ctx, request, callback, sem)
+	logger.Printf("Q=%d for %s, added %s\n", dq.queuesCount[host], host, request.URL.String())
+	go dm.processRequest(ctx, request, callback, sem, opts)
 
 }
 
-func (dm *DownloadManager) processRequest(ctx context.Context, request *http.Request,
-	callback DownloadCallback, sem chan struct{}) {
+func (dm *DownloadManager) processRequest(
+	ctx context.Context,
+	request *http.Request,
+	callback DownloadCallback,
+	sem chan struct{},
+	opts ...interface{},
+) {
 	dq := dm.downloadQueue
 
 	defer dq.wg.Done()
 
 	// Acquire a slot in the semaphore
 	sem <- struct{}{}
-	defer func() { <-sem }() // Release slot after the download
+	defer func() {
+		<-sem
+		dm.downloadQueue.queuesCount[request.Host]--
+	}() // Release slot after the download
 
 	// Perform the download
-	dm.processDownload(ctx, request, callback)
+	dm.processDownload(ctx, request, callback, opts)
 }
 
 // Wait waits for all downloads to complete
@@ -158,6 +197,7 @@ func NewDownloadManager(opts *DownloadManagerOptions) *DownloadManager {
 	downloadQueue := &downloadQueue{
 		limitPerHost: LIMIT_PER_HOST,
 		queues:       make(map[string]chan struct{}),
+		queuesCount:  make(map[string]int),
 	}
 
 	return &DownloadManager{
