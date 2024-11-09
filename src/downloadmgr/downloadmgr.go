@@ -41,7 +41,7 @@ type downloadQueue struct {
 	wg           sync.WaitGroup
 }
 
-type DownloadCallback func(data []byte)
+type DownloadCallback func(ctx context.Context, data []byte)
 
 type DownloadCacheOption struct {
 	Ttl time.Duration
@@ -102,7 +102,7 @@ func (dm *DownloadManager) processDownload(
 			} else {
 				go func() {
 					logger.Printf("returned from cache %s", request.URL.String())
-					callback(data)
+					callback(ctx, data)
 				}()
 				return
 			}
@@ -139,7 +139,7 @@ func (dm *DownloadManager) processDownload(
 		logger.Fatal(err)
 	}
 	go func() {
-		callback(body)
+		callback(ctx, body)
 	}()
 }
 

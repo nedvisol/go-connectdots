@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"log"
 	"regexp"
@@ -16,6 +17,11 @@ import (
 	"github.com/nedvisol/go-connectdots/util"
 )
 
+type key int
+
+const billContextKey key = 0
+const billActionContextKey key = 1
+
 type CongressGovProcessor struct {
 	ctx        context.Context
 	dmgr       *downloadmgr.DownloadManager
@@ -28,6 +34,18 @@ const MEMBERS_URL = "https://api.congress.gov/v3/member?format=json&currentMembe
 const CONGRESS_URL = "https://api.congress.gov/v3/congress?format=json"
 const BILLS_URL = "https://api.congress.gov//v3/bill/%s?format=json&limit=250"
 
+func getPersonIdByBioguideId(bioguideId string) string {
+	return util.GetSHA512(fmt.Sprintf("%s-congress", bioguideId))
+}
+
+func getBillIdByBillNumber(congress int, originChamberCode string, billNumber string) string {
+	return util.GetSHA512(fmt.Sprintf("%d/bill/%s/%s", congress, originChamberCode, billNumber))
+}
+
+func getVotedEdgeIdByBillAction(bill *model.CongressApiBill, billAction *model.CongressApiBillAction) string {
+	return util.GetSHA512(fmt.Sprintf("%d/bill/%s/%s/action/%s", bill.Congress, *bill.OriginChamberCode, *bill.Number, *billAction.ActionDate))
+}
+
 func (c *CongressGovProcessor) applyApiToken(url string) string {
 	return fmt.Sprintf("%s&api_key=%s", url, c.apiToken)
 }
@@ -37,7 +55,7 @@ func (c *CongressGovProcessor) createMemberNodeInfo(member *model.CongressApiMem
 	first, last := names[0], names[1]
 
 	return &graphdb.NodeInfo{
-		Id:    util.GetSHA512(fmt.Sprintf("%s-congress", member.BioguideID)),
+		Id:    getPersonIdByBioguideId(member.BioguideID),
 		Label: "Person",
 		Attrs: &map[string]interface{}{
 			"first":     first,
@@ -66,7 +84,7 @@ func (c *CongressGovProcessor) createMember(member *model.CongressApiMember) {
 func (c *CongressGovProcessor) createBillNode(bill *model.CongressApiBill) {
 	var err error
 	billNode := &graphdb.NodeInfo{
-		Id:    util.GetSHA512(fmt.Sprintf("bill/%s/%s", *bill.OriginChamberCode, *bill.Number)),
+		Id:    getBillIdByBillNumber(bill.Congress, *bill.OriginChamberCode, *bill.Number),
 		Label: "Bill",
 		Attrs: &map[string]interface{}{
 			"title":         bill.Title,
@@ -85,7 +103,7 @@ func (c *CongressGovProcessor) createBillNode(bill *model.CongressApiBill) {
 	fmt.Printf("bill added/updated %s\n", *bill.Number)
 }
 
-func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
+func (c *CongressGovProcessor) processCurrentMembers(ctx context.Context, data []byte) {
 	fmt.Printf("processing current memebers %d bytes\n", len(data))
 
 	var result model.CongressApiMemberResponse
@@ -99,7 +117,7 @@ func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
 	if result.Pagination != nil && result.Pagination.Next != nil {
 		fmt.Printf("found more things to download! %s\n", *result.Pagination.Next)
 		c.dmgr.Download(
-			c.ctx,
+			ctx,
 			downloadmgr.NewHttpGetRequest(c.applyApiToken(*result.Pagination.Next)),
 			c.processCurrentMembers,
 			downloadmgr.NewDownloadCacheOption(TEN_YEARS),
@@ -113,11 +131,104 @@ func (c *CongressGovProcessor) processCurrentMembers(data []byte) {
 	}
 	fmt.Printf("updated %d members\n", cnt)
 }
-func (c *CongressGovProcessor) processBillActions(data []byte) {
-	fmt.Printf("processing bill actions %d bytes\n", len(data))
+
+func (c *CongressGovProcessor) createVotedForEdge(
+	bill *model.CongressApiBill,
+	billAction *model.CongressApiBillAction,
+	bioguideId string,
+	vote string,
+) {
+	votedFor := &graphdb.EdgeInfo{
+		Label: "VOTED",
+		Id:    getVotedEdgeIdByBillAction(bill, billAction),
+		Left: &graphdb.NodeInfo{
+			Id:    getPersonIdByBioguideId(bioguideId),
+			Label: "Person",
+		},
+		Right: &graphdb.NodeInfo{
+			Id:    getBillIdByBillNumber(bill.Congress, *bill.OriginChamberCode, *bill.Number),
+			Label: "Bill",
+		},
+		Attrs: &map[string]interface{}{
+			"vote": vote,
+			"date": billAction.ActionDate,
+		},
+	}
+	err := c.graphdbsvc.UpdateEdge(votedFor, true)
+	if err != nil {
+		panic(err)
+	}
 }
 
-func (c *CongressGovProcessor) processBills(data []byte) {
+func (c *CongressGovProcessor) processHouseRollCallVote(ctx context.Context, data []byte) {
+	fmt.Printf("processing house rollcall vote %d bytes\n", len(data))
+
+	var result model.CongressApiHouseRollcallVote
+
+	// Parse (unmarshal) the JSON into the map
+	err := xml.Unmarshal(data, &result)
+	if err != nil {
+		log.Fatalf("Error parsing JSON: %s", err)
+	}
+
+	//get bill object from context
+	bill := ctx.Value(billContextKey)
+	billAction := ctx.Value(billActionContextKey)
+
+	for _, recordedVote := range result.VoteData.RecordedVotes {
+		bioguideId := recordedVote.Legislator.NameID
+		vote := recordedVote.Vote
+
+		c.createVotedForEdge(bill.(*model.CongressApiBill), billAction.(*model.CongressApiBillAction), *bioguideId, *vote)
+	}
+
+}
+
+func (c *CongressGovProcessor) processSenateRollCallVote(ctx context.Context, data []byte) {
+	fmt.Printf("processing senate rollcall vote %d bytes\n", len(data))
+}
+
+func (c *CongressGovProcessor) processBillActions(ctx context.Context, data []byte) {
+	fmt.Printf("processing bill actions %d bytes\n", len(data))
+
+	var result model.CongressApiBillActionsPayload
+
+	// Parse (unmarshal) the JSON into the map
+	err := json.Unmarshal(data, &result)
+	if err != nil {
+		log.Fatalf("Error parsing JSON: %s", err)
+	}
+
+	var cnt = 0
+	for _, action := range result.Actions {
+		if action.RecordedVotes != nil && *action.Type == "Floor" {
+			billActionCtx := context.WithValue(ctx, billActionContextKey, action)
+			for _, recordedVote := range action.RecordedVotes {
+				if recordedVote.URL != nil {
+					if strings.Contains(*recordedVote.URL, "//clerk.house.gov") {
+						c.dmgr.Download(
+							billActionCtx,
+							downloadmgr.NewHttpGetRequest(*recordedVote.URL),
+							c.processHouseRollCallVote,
+							downloadmgr.NewDownloadCacheOption(TEN_YEARS),
+						)
+					} else if strings.Contains(*recordedVote.URL, "//www.senate.gov") {
+						c.dmgr.Download(
+							billActionCtx,
+							downloadmgr.NewHttpGetRequest(*recordedVote.URL),
+							c.processSenateRollCallVote,
+							downloadmgr.NewDownloadCacheOption(TEN_YEARS),
+						)
+					}
+				}
+			}
+		}
+		cnt++
+	}
+	fmt.Printf("updated %d bills\n", cnt)
+}
+
+func (c *CongressGovProcessor) processBills(ctx context.Context, data []byte) {
 	fmt.Printf("processing bills %d bytes\n", len(data))
 
 	var result model.CongressApiBillsData
@@ -135,8 +246,11 @@ func (c *CongressGovProcessor) processBills(data []byte) {
 		//download and process bills
 		billActionsUrl := strings.ReplaceAll(*bill.URL, "?format=json", "/actions?format=json")
 
+		//create new context with value
+		billCtx := context.WithValue(ctx, billContextKey, bill)
+
 		c.dmgr.Download(
-			c.ctx,
+			billCtx,
 			downloadmgr.NewHttpGetRequest(c.applyApiToken(billActionsUrl)),
 			c.processBillActions,
 			downloadmgr.NewDownloadCacheOption(TEN_YEARS),
@@ -148,7 +262,7 @@ func (c *CongressGovProcessor) processBills(data []byte) {
 
 var congressUrlRegex = regexp.MustCompile(`congress/(\d+)`)
 
-func (c *CongressGovProcessor) processCongress(data []byte) {
+func (c *CongressGovProcessor) processCongress(ctx context.Context, data []byte) {
 	fmt.Printf("processing congress %d bytes\n", len(data))
 
 	var result model.CongressApiCongress
@@ -169,7 +283,7 @@ func (c *CongressGovProcessor) processCongress(data []byte) {
 
 			//download and process bills
 			c.dmgr.Download(
-				c.ctx,
+				ctx,
 				downloadmgr.NewHttpGetRequest(c.applyApiToken(billsUrl)),
 				c.processBills,
 			)

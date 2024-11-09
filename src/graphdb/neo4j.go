@@ -23,8 +23,52 @@ func (n *Neo4jGraphService) getSession(ctx context.Context) neo4j.SessionWithCon
 }
 
 // CreateEdge implements GraphDbService.
-func (n *Neo4jGraphService) CreateEdge(edge *EdgeInfo) error {
-	panic("unimplemented")
+func (n *Neo4jGraphService) UpdateEdge(edge *EdgeInfo, allowUpsert bool) error {
+	queryAttrs := make([]string, 0, len(*edge.Attrs)+1)
+	for key := range *edge.Attrs {
+		queryAttrs = append(queryAttrs, fmt.Sprintf("edge.%s = $%s", key, key))
+	}
+
+	mergeOrMatch := util.Ternary(allowUpsert, "MERGE", "MATCH")
+
+	query := fmt.Sprintf(`
+	MATCH (left:%s { _id: $left_id })
+	MATCH (right:%s { _id: $right_id })
+	%s (left)-[edge:%s {_id: $edge_id}]->(right)
+	SET %s
+	RETURN edge._id
+	`,
+		edge.Left.Label,
+		edge.Right.Label,
+		mergeOrMatch,
+		edge.Label,
+		strings.Join(queryAttrs, ","))
+
+	(*edge.Attrs)["left_id"] = edge.Left.Id
+	(*edge.Attrs)["right_id"] = edge.Right.Id
+	(*edge.Attrs)["edge_id"] = edge.Id
+
+	//fmt.Printf("executing query %s\n", query)
+
+	// Execute the query inside a transaction
+	session := n.getSession(n.ctx)
+	defer session.Close(n.ctx)
+	records, err := session.Run(n.ctx, query, *edge.Attrs)
+	if err != nil {
+		return err
+	}
+
+	if records.Next(n.ctx) {
+		id, found := records.Record().Get("edge._id")
+		if !found {
+			fmt.Printf("error updating edge %s\n", id)
+			panic("unable to update edge")
+		}
+		//fmt.Printf("Updated node %s\n", id)
+		return nil
+	}
+
+	return nil
 }
 
 // func cloneMap(source *map[string]interface{}) *map[string]interface{} {

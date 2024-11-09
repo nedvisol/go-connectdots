@@ -7,15 +7,16 @@ type NodeInfo struct {
 }
 
 type EdgeInfo struct {
-	EdgeType  string
-	EdgeAttrs *map[string]interface{}
-	Left      *NodeInfo
-	Right     *NodeInfo
+	Label string
+	Id    string
+	Attrs *map[string]interface{}
+	Left  *NodeInfo
+	Right *NodeInfo
 }
 
 type GraphDbService interface {
 	CreateNode(node *NodeInfo) error
 	UpdateNode(node *NodeInfo, allowUpsert bool) error
 	DeleteNode(node *NodeInfo) error
-	CreateEdge(edge *EdgeInfo) error
+	UpdateEdge(edge *EdgeInfo, allowUpsert bool) error
 }

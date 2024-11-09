@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/xml"
 	"time"
 )
 
@@ -92,4 +93,109 @@ type CongressApiBill struct {
 type CongressApiAction struct {
 	ActionDate *string `json:"actionDate"`
 	Text       *string `json:"text"`
+}
+
+type CongressApiBillActionsPayload struct {
+	Actions    []*CongressApiBillAction `json:"actions"`
+	Pagination *CongressApiPagination   `json:"pagination"`
+	Request    *CongressApiRequest      `json:"request"`
+}
+
+type CongressApiBillAction struct {
+	ActionCode    *string                    `json:"actionCode,omitempty"`
+	ActionDate    *string                    `json:"actionDate"`
+	SourceSystem  *CongressApiSourceSystem   `json:"sourceSystem"`
+	Text          *string                    `json:"text"`
+	Type          *string                    `json:"type"`
+	RecordedVotes []*CongressApiRecordedVote `json:"recordedVotes,omitempty"`
+}
+
+type CongressApiSourceSystem struct {
+	Code *int    `json:"code,omitempty"`
+	Name *string `json:"name"`
+}
+
+type CongressApiRecordedVote struct {
+	Chamber       *string   `json:"chamber"`
+	Congress      *int      `json:"congress"`
+	Date          time.Time `json:"date"`
+	RollNumber    *int      `json:"rollNumber"`
+	SessionNumber *int      `json:"sessionNumber"`
+	URL           *string   `json:"url"`
+}
+
+type CongressApiHouseRollcallVote struct {
+	XMLName      xml.Name                      `xml:"rollcall-vote"`
+	VoteMetadata *CongressApiHouseVoteMetadata `xml:"vote-metadata"`
+	VoteData     *CongressApiHouseVoteData     `xml:"vote-data"`
+}
+
+type CongressApiHouseVoteMetadata struct {
+	Majority     *string                     `xml:"majority"`
+	Congress     *string                     `xml:"congress"`
+	Session      *string                     `xml:"session"`
+	Chamber      *string                     `xml:"chamber"`
+	RollcallNum  *string                     `xml:"rollcall-num"`
+	LegisNum     *string                     `xml:"legis-num"`
+	VoteQuestion *string                     `xml:"vote-question"`
+	VoteType     *string                     `xml:"vote-type"`
+	VoteResult   *string                     `xml:"vote-result"`
+	ActionDate   *string                     `xml:"action-date"`
+	ActionTime   *CongressApiHouseActionTime `xml:"action-time"`
+	VoteDesc     *string                     `xml:"vote-desc"`
+	VoteTotals   *CongressApiHouseVoteTotals `xml:"vote-totals"`
+}
+
+type CongressApiHouseActionTime struct {
+	TimeETZ *string `xml:"time-etz,attr"`
+	Text    *string `xml:",chardata"`
+}
+
+type CongressApiHouseVoteTotals struct {
+	TotalsByPartyHeader *CongressApiHouseTotalsByPartyHeader `xml:"totals-by-party-header"`
+	TotalsByParty       []*CongressApiHouseTotalsByParty     `xml:"totals-by-party"`
+	TotalsByVote        *CongressApiHouseTotalsByVote        `xml:"totals-by-vote"`
+}
+
+type CongressApiHouseTotalsByPartyHeader struct {
+	PartyHeader     *string `xml:"party-header"`
+	YeaHeader       *string `xml:"yea-header"`
+	NayHeader       *string `xml:"nay-header"`
+	PresentHeader   *string `xml:"present-header"`
+	NotVotingHeader *string `xml:"not-voting-header"`
+}
+
+type CongressApiHouseTotalsByParty struct {
+	Party          *string `xml:"party"`
+	YeaTotal       *string `xml:"yea-total"`
+	NayTotal       *string `xml:"nay-total"`
+	PresentTotal   *string `xml:"present-total"`
+	NotVotingTotal *string `xml:"not-voting-total"`
+}
+
+type CongressApiHouseTotalsByVote struct {
+	TotalStub      *string `xml:"total-stub"`
+	YeaTotal       *string `xml:"yea-total"`
+	NayTotal       *string `xml:"nay-total"`
+	PresentTotal   *string `xml:"present-total"`
+	NotVotingTotal *string `xml:"not-voting-total"`
+}
+
+type CongressApiHouseVoteData struct {
+	RecordedVotes []*CongressApiHouseRecordedVote `xml:"recorded-vote"`
+}
+
+type CongressApiHouseRecordedVote struct {
+	Legislator *CongressApiHouseLegislator `xml:"legislator"`
+	Vote       *string                     `xml:"vote"`
+}
+
+type CongressApiHouseLegislator struct {
+	NameID         *string `xml:"name-id,attr"`
+	SortField      *string `xml:"sort-field,attr"`
+	UnaccentedName *string `xml:"unaccented-name,attr"`
+	Party          *string `xml:"party,attr"`
+	State          *string `xml:"state,attr"`
+	Role           *string `xml:"role,attr"`
+	Text           *string `xml:",chardata"`
 }
